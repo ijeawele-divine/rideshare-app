@@ -1,0 +1,99 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: redis-config
+  namespace: rideshare-data
+data:
+  redis.conf: |
+    # Standalone mode (Cluster disabled)
+    port 6379
+    bind 0.0.0.0
+    appendonly yes
+    protected-mode no
+    # Maximize memory efficiency
+    maxmemory 512mb
+    maxmemory-policy allkeys-lru
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: redis-standalone
+  namespace: rideshare-data
+spec:
+  type: ClusterIP
+  ports:
+    - port: 6379
+      targetPort: 6379
+      name: redis
+  selector:
+    app: redis-standalone
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: redis-standalone
+  namespace: rideshare-data
+spec:
+  serviceName: redis-standalone
+  replicas: 1 # <--- JUST ONE NODE
+  selector:
+    matchLabels:
+      app: redis-standalone
+  template:
+    metadata:
+      labels:
+        app: redis-standalone
+    spec:
+      securityContext:
+        fsGroup: 999
+        runAsUser: 999
+        runAsNonRoot: true
+      containers:
+        - name: redis
+          image: redis:7.2
+          command: ["redis-server"]
+          args:
+            - "/etc/redis/redis.conf"
+            - "--requirepass"
+            - "$(REDIS_PASSWORD)"
+          ports:
+            - containerPort: 6379
+              name: redis
+          env:
+            - name: REDIS_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: redis-credentials
+                  key: REDIS_PASSWORD
+          resources:
+            requests:
+              cpu: 100m
+              memory: 256Mi
+            limits:
+              cpu: 500m
+              memory: 1Gi
+          volumeMounts:
+            - name: data
+              mountPath: /data
+            - name: config
+              mountPath: /etc/redis
+          readinessProbe:
+            exec:
+              command: ["sh", "-c", "redis-cli -a $REDIS_PASSWORD ping"]
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: config
+          configMap:
+            name: redis-config
+  volumeClaimTemplates:
+    - metadata:
+        name: data
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: ebs-gp3
+        resources:
+          requests:
+            storage: 10Gi

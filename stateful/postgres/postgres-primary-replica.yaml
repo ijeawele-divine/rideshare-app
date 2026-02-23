@@ -1,0 +1,291 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-config
+  namespace: rideshare-data
+data:
+  postgresql.conf: |
+    listen_addresses = '*'
+    port = 5432
+    max_connections = 200
+    shared_buffers = 256MB
+    wal_level = replica
+    max_wal_senders = 10
+    max_replication_slots = 10
+    hot_standby = on
+    hot_standby_feedback = on
+    archive_mode = on
+    archive_command = '/bin/true'
+
+  pg_hba.conf: |
+    # TYPE  DATABASE        USER            ADDRESS                 METHOD
+    local   all             all                                     trust
+    host    all             all             127.0.0.1/32            trust
+    host    all             all             ::1/128                 trust
+    host    all             all             0.0.0.0/0               md5
+    # FIXED: Allow the specific 'replicator' user defined in secrets
+    host    replication     replicationuser     0.0.0.0/0               md5
+
+  init-primary.sh: |
+    #!/bin/bash
+    set -e
+
+    # Only run init if data is missing
+    if [ ! -s "$PGDATA/PG_VERSION" ]; then
+      echo "Initializing primary database..."
+      initdb -D $PGDATA
+      
+      cp /etc/postgresql/postgresql.conf $PGDATA/postgresql.conf
+      cp /etc/postgresql/pg_hba.conf $PGDATA/pg_hba.conf
+      
+      # Start temporarily to create users
+      pg_ctl -D $PGDATA -w start
+      
+      psql -c "CREATE USER $POSTGRES_USER WITH SUPERUSER PASSWORD '$POSTGRES_PASSWORD';"
+      psql -c "CREATE USER $POSTGRES_REPLICATION_USER WITH REPLICATION PASSWORD '$POSTGRES_REPLICATION_PASSWORD';"
+      psql -c "CREATE DATABASE rideshare OWNER $POSTGRES_USER;"
+      
+      # FIXED: Create slots 0 and 1 to match StatefulSet indices
+      psql -c "SELECT pg_create_physical_replication_slot('replica_0_slot');"
+      psql -c "SELECT pg_create_physical_replication_slot('replica_1_slot');"
+      
+      pg_ctl -D $PGDATA -m fast -w stop
+    fi
+
+    exec postgres -D $PGDATA
+
+  init-replica.sh: |
+    #!/bin/bash
+    set -e
+
+    # Only run init if data is missing
+    if [ ! -s "$PGDATA/PG_VERSION" ]; then
+      echo "Waiting for primary..."
+      until pg_isready -h postgres-primary -p 5432 -U $POSTGRES_REPLICATION_USER; do
+        sleep 2
+      done
+      
+      echo "Cloning data from primary..."
+      PGPASSWORD=$POSTGRES_REPLICATION_PASSWORD pg_basebackup \
+        -h postgres-primary \
+        -D $PGDATA \
+        -U $POSTGRES_REPLICATION_USER \
+        -Fp -Xs -P -R
+      
+      cp /etc/postgresql/postgresql.conf $PGDATA/postgresql.conf
+      cp /etc/postgresql/pg_hba.conf $PGDATA/pg_hba.conf
+      
+      # Configure replication connection
+      cat >> $PGDATA/postgresql.auto.conf <<EOF
+    primary_conninfo = 'host=postgres-primary port=5432 user=$POSTGRES_REPLICATION_USER password=$POSTGRES_REPLICATION_PASSWORD'
+    primary_slot_name = 'replica_${HOSTNAME##*-}_slot'
+    EOF
+      
+      touch $PGDATA/standby.signal
+    fi
+
+    exec postgres -D $PGDATA
+
+---
+# Services
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-headless
+  namespace: rideshare-data
+  labels: { app: postgres }
+spec:
+  clusterIP: None
+  ports: [{ port: 5432, name: postgres }]
+  selector: { app: postgres }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-primary
+  namespace: rideshare-data
+  labels: { app: postgres, role: primary }
+spec:
+  type: ClusterIP
+  ports: [{ port: 5432, name: postgres }]
+  selector: { app: postgres, role: primary }
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres-replicas
+  namespace: rideshare-data
+  labels: { app: postgres, role: replica }
+spec:
+  type: ClusterIP
+  ports: [{ port: 5432, name: postgres }]
+  selector: { app: postgres, role: replica }
+
+---
+# Primary StatefulSet
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres-primary
+  namespace: rideshare-data
+spec:
+  serviceName: postgres-headless
+  replicas: 1
+  selector:
+    matchLabels: { app: postgres, role: primary }
+  template:
+    metadata:
+      labels: { app: postgres, role: primary }
+    spec:
+      securityContext:
+        fsGroup: 999
+        runAsUser: 999
+      # FIXED: Init Container for Permissions
+      initContainers:
+        - name: fix-permissions
+          image: postgres:16
+          command: ["/bin/bash", "-c"]
+          args:
+            [
+              "mkdir -p $PGDATA && chmod 700 $PGDATA && chown -R 999:999 /var/lib/postgresql/data",
+            ]
+          env: [{ name: PGDATA, value: /var/lib/postgresql/data/pgdata }]
+          securityContext: { runAsUser: 0 }
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      containers:
+        - name: postgres
+          image: postgres:16
+          command: ["/bin/bash", "/etc/postgresql/init-primary.sh"]
+          ports: [{ containerPort: 5432 }]
+          env:
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+            - name: POSTGRES_USER
+              valueFrom:
+                {
+                  secretKeyRef:
+                    { name: postgres-credentials, key: POSTGRES_USER },
+                }
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                {
+                  secretKeyRef:
+                    { name: postgres-credentials, key: POSTGRES_PASSWORD },
+                }
+            - name: POSTGRES_REPLICATION_USER
+              valueFrom:
+                {
+                  secretKeyRef:
+                    {
+                      name: postgres-credentials,
+                      key: POSTGRES_REPLICATION_USER,
+                    },
+                }
+            - name: POSTGRES_REPLICATION_PASSWORD
+              valueFrom:
+                {
+                  secretKeyRef:
+                    {
+                      name: postgres-credentials,
+                      key: POSTGRES_REPLICATION_PASSWORD,
+                    },
+                }
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: config
+              mountPath: /etc/postgresql
+          readinessProbe:
+            exec: { command: ["pg_isready", "-U", "postgres"] }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+      volumes:
+        - name: config
+          configMap: { name: postgres-config, defaultMode: 0755 }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: ebs-gp3
+        resources: { requests: { storage: 20Gi } }
+
+---
+# Replica StatefulSet
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: postgres-replica
+  namespace: rideshare-data
+spec:
+  serviceName: postgres-headless
+  replicas: 2
+  selector:
+    matchLabels: { app: postgres, role: replica }
+  template:
+    metadata:
+      labels: { app: postgres, role: replica }
+    spec:
+      securityContext:
+        fsGroup: 999
+        runAsUser: 999
+      # FIXED: Init Container for Permissions
+      initContainers:
+        - name: fix-permissions
+          image: postgres:16
+          command: ["/bin/bash", "-c"]
+          args:
+            [
+              "mkdir -p $PGDATA && chmod 700 $PGDATA && chown -R 999:999 /var/lib/postgresql/data",
+            ]
+          env: [{ name: PGDATA, value: /var/lib/postgresql/data/pgdata }]
+          securityContext: { runAsUser: 0 }
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+      containers:
+        - name: postgres
+          image: postgres:16
+          command: ["/bin/bash", "/etc/postgresql/init-replica.sh"]
+          ports: [{ containerPort: 5432 }]
+          env:
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+            - name: POSTGRES_REPLICATION_USER
+              valueFrom:
+                {
+                  secretKeyRef:
+                    {
+                      name: postgres-credentials,
+                      key: POSTGRES_REPLICATION_USER,
+                    },
+                }
+            - name: POSTGRES_REPLICATION_PASSWORD
+              valueFrom:
+                {
+                  secretKeyRef:
+                    {
+                      name: postgres-credentials,
+                      key: POSTGRES_REPLICATION_PASSWORD,
+                    },
+                }
+          volumeMounts:
+            - name: data
+              mountPath: /var/lib/postgresql/data
+            - name: config
+              mountPath: /etc/postgresql
+          readinessProbe:
+            exec: { command: ["pg_isready", "-U", "postgres"] }
+            initialDelaySeconds: 10
+            periodSeconds: 10
+      volumes:
+        - name: config
+          configMap: { name: postgres-config, defaultMode: 0755 }
+  volumeClaimTemplates:
+    - metadata: { name: data }
+      spec:
+        accessModes: [ReadWriteOnce]
+        storageClassName: ebs-gp3
+        resources: { requests: { storage: 20Gi } }
+

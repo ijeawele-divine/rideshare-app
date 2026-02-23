@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rideshare-frontend
+spec:
+  selector:
+    matchLabels:
+      app: rideshare-frontend
+  template:
+    metadata:
+      labels:
+        app: rideshare-frontend
+    spec:
+      containers:
+      - name: rideshare-frontend
+        image: 221693237976.dkr.ecr.eu-north-1.amazonaws.com/divine/frontend-rideshare:V2
+        resources:
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
+        ports:
+        - containerPort: 3000
+        envFrom:
+        - secretRef:
+            name: rideshare-frontend-aws-secret

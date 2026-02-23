@@ -1,0 +1,25 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: rider-service
+spec:
+  selector:
+    matchLabels:
+      app: rider-service
+  template:
+    metadata:
+      labels:
+        app: rider-service
+    spec:
+      containers:
+      - name: rider-service
+        image: 221693237976.dkr.ecr.eu-north-1.amazonaws.com/divine/rider-service:V1
+        resources:
+          limits:
+            memory: "128Mi"
+            cpu: "500m"
+        ports:
+        - containerPort: 3001
+        envFrom:
+        - secretRef:
+            name: rider-aws-secret

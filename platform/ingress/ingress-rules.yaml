@@ -1,0 +1,83 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nginx-rideshare-api-ingress
+  namespace: default
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+    nginx.ingress.kubernetes.io/use-regex: "true"
+    # This rewrite rule turns /driver/health into /api/v1/health for the pod
+    nginx.ingress.kubernetes.io/rewrite-target: /api/v1/$2
+spec:
+  tls:
+    - hosts:
+        - rideshare.ijeaweledivine.online
+      secretName: tls-rideshare
+  rules:
+    - host: rideshare.ijeaweledivine.online
+      http:
+        paths:
+          - path: /api/v1/driver
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: driver-service
+                port:
+                  number: 80
+          - path: /rider(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: rider-service
+                port:
+                  number: 80
+          - path: /matching(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: matching-service
+                port:
+                  number: 80
+          - path: /trip/api
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: trip-service
+                port:
+                  number: 80
+          # WebSocket path specifically for the Trip Service on port 3006
+          - path: /socket.io(/|$)(.*)
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: trip-service
+                port:
+                  number: 3006
+
+---
+# Separate Ingress for Frontend 
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: nginx-rideshare-frontend-ingress
+  namespace: default
+  annotations:
+    kubernetes.io/ingress.class: nginx
+    cert-manager.io/cluster-issuer: letsencrypt-prod
+spec:
+  tls:
+    - hosts:
+        - rideshare.ijeaweledivine.online
+      secretName: tls-rideshare
+  rules:
+    - host: rideshare.ijeaweledivine.online
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: rideshare-frontend
+                port:
+                  number: 80

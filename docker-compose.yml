@@ -1,0 +1,18 @@
+services:
+  postgres-db: 
+    image: postgres:15-alpine
+    container_name: postgres-db
+    environment:
+      POSTGRES_USER: user_admin
+      POSTGRES_PASSWORD: password1234
+      POSTGRES_MULTIPLE_DATABASES: rider_db, trip_db, driver_db
+    volumes:
+      - ./multiple-databases.sh:/docker-entrypoint-initdb.d/multiple-databases.sh
+    networks:
+      - swiftride-net
+    ports:
+      - "5432:5432"
+
+networks:
+  swiftride-net:
+    external: true

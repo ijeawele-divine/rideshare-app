@@ -1,4 +1,4 @@
-# RideShare Pro — Kubernetes Deployment on AWS EKS
+# RideShare Kubernetes Deployment on AWS EKS
 
 A production-grade, microservices-based ride-sharing platform deployed on Amazon EKS. Built to handle real-world scale, traffic spikes, and high availability requirements.
 

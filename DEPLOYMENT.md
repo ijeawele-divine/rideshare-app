@@ -1,6 +1,6 @@
 # Deployment Guide
 
-This document covers the step-by-step deployment order for RideShare Pro on AWS EKS. Follow each phase in sequence — later steps depend on earlier ones being healthy.
+This document covers the step-by-step deployment order for RideShare Pro on AWS EKS. Follow each phase in sequence, later steps depend on earlier ones being healthy.
 
 ---
 

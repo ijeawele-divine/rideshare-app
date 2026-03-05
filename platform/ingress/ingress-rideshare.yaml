@@ -10,6 +10,7 @@ metadata:
     cert-manager.io/cluster-issuer: letsencrypt-prod
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
+    nginx.ingress.kubernetes.io/websocket-services: "trip-service"
 spec:
   ingressClassName: nginx
   tls:
@@ -20,6 +21,13 @@ spec:
     - host: rideshare.ijeaweledivine.online
       http:
         paths:
+          - path: /ws(/|$).*
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: trip-service
+                port:
+                  number: 3006
           - path: /api/v1/drivers(/|$).*
             pathType: ImplementationSpecific
             backend:
@@ -55,13 +63,13 @@ spec:
                 name: trip-service
                 port:
                   number: 80
-          - path: /ws(/|$).*
+          - path: /api/fares(/|$).*
             pathType: ImplementationSpecific
             backend:
               service:
                 name: trip-service
                 port:
-                  number: 3006
+                  number: 80 
           - path: /
             pathType: Prefix
             backend:

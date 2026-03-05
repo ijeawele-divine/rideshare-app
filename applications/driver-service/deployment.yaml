@@ -15,6 +15,9 @@ spec:
       - name: driver-service
         image: 221693237976.dkr.ecr.eu-north-1.amazonaws.com/rideshare/rideshare-services:driver-service
         resources:
+          requests:
+            memory: "64Mi"
+            cpu: "250m"
           limits:
             memory: "128Mi"
             cpu: "500m"

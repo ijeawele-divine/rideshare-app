@@ -1,0 +1,27 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: db-init
+#  namespace: rideshare
+spec:
+  template:
+    spec:
+      restartPolicy: OnFailure
+      containers:
+      - name: db-init
+        image: postgres:15
+        command:
+        - /bin/sh
+        - -c
+        - |
+          psql $DATABASE_URL -c "CREATE DATABASE rider_db;" || true
+          psql $DATABASE_URL -c "CREATE DATABASE driver_db;" || true
+          psql $DATABASE_URL -c "CREATE DATABASE trip_db;" || true
+          psql $DATABASE_URL -c "CREATE DATABASE matching_db;" || true
+          echo "Databases created successfully"
+        env:
+        - name: DATABASE_URL
+          valueFrom:
+            secretKeyRef:
+              name: rider-aws-secret
+              key: DATABASE_URL

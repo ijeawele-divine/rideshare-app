@@ -13,7 +13,7 @@ spec:
     spec:
       containers:
       - name: rideshare-frontend
-        image: 221693237976.dkr.ecr.eu-north-1.amazonaws.com/divine/frontend-rideshare:V3
+        image: 221693237976.dkr.ecr.eu-north-1.amazonaws.com/divine/frontend-rideshare:V4
         resources:
           requests:
             memory: "64Mi"

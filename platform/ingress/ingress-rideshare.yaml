@@ -70,6 +70,13 @@ spec:
                 name: trip-service
                 port:
                   number: 80 
+          - path: /api/riders(/|$).*
+            pathType: ImplementationSpecific
+            backend:
+              service:
+                name: rider-service
+                port:
+                  number: 80
           - path: /
             pathType: Prefix
             backend:

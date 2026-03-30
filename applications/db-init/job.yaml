@@ -2,8 +2,9 @@ apiVersion: batch/v1
 kind: Job
 metadata:
   name: db-init
-#  namespace: rideshare
+  namespace: default
 spec:
+  ttlSecondsAfterFinished: 300
   template:
     spec:
       restartPolicy: OnFailure
@@ -14,14 +15,47 @@ spec:
         - /bin/sh
         - -c
         - |
-          psql $DATABASE_URL -c "CREATE DATABASE rider_db;" || true
-          psql $DATABASE_URL -c "CREATE DATABASE driver_db;" || true
-          psql $DATABASE_URL -c "CREATE DATABASE trip_db;" || true
-          psql $DATABASE_URL -c "CREATE DATABASE matching_db;" || true
-          echo "Databases created successfully"
+          echo "Connecting to PostgreSQL..."
+          
+          # connect to default postgres db to create all databases
+          PGPASSWORD=$DB_PASSWORD psql \
+            -h $DB_HOST \
+            -U $DB_USER \
+            -d postgres \
+            -c "CREATE DATABASE rider_db;" || echo "rider_db already exists"
+          
+          PGPASSWORD=$DB_PASSWORD psql \
+            -h $DB_HOST \
+            -U $DB_USER \
+            -d postgres \
+            -c "CREATE DATABASE driver_db;" || echo "driver_db already exists"
+          
+          PGPASSWORD=$DB_PASSWORD psql \
+            -h $DB_HOST \
+            -U $DB_USER \
+            -d postgres \
+            -c "CREATE DATABASE trip_db;" || echo "trip_db already exists"
+          
+          PGPASSWORD=$DB_PASSWORD psql \
+            -h $DB_HOST \
+            -U $DB_USER \
+            -d postgres \
+            -c "CREATE DATABASE matching_db;" || echo "matching_db already exists"
+          
+          echo "All databases created successfully"
         env:
-        - name: DATABASE_URL
+        - name: DB_HOST
           valueFrom:
             secretKeyRef:
               name: rider-aws-secret
-              key: DATABASE_URL
+              key: DB_HOST
+        - name: DB_USER
+          valueFrom:
+            secretKeyRef:
+              name: rider-aws-secret
+              key: DB_USER
+        - name: DB_PASSWORD
+          valueFrom:
+            secretKeyRef:
+              name: rider-aws-secret
+              key: DB_PASSWORD

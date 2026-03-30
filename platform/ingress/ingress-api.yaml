@@ -4,12 +4,12 @@ metadata:
   name: rideshare-api
   namespace: default
   annotations:
-    nginx.ingress.kubernetes.io/rewrite-target: /$1
     nginx.ingress.kubernetes.io/use-regex: "true"
     cert-manager.io/cluster-issuer: letsencrypt-prod
     nginx.ingress.kubernetes.io/proxy-read-timeout: "3600"
     nginx.ingress.kubernetes.io/proxy-send-timeout: "3600"
     nginx.ingress.kubernetes.io/websocket-services: "trip-service"
+    # no rewrite-target
 spec:
   ingressClassName: nginx
   tls:
@@ -20,69 +20,38 @@ spec:
     - host: rideshare.ijeaweledivine.online
       http:
         paths:
-          # WebSockets (Matches /ws/ws -> sends /ws)
-          - path: /ws/(.*)
+          - path: /ws/.*
             pathType: ImplementationSpecific
             backend:
               service:
                 name: trip-service
                 port:
                   number: 3006
-          # Driver Service
-          - path: /api/v1/drivers/(.*)
+          - path: /api/v1/drivers/.*
             pathType: ImplementationSpecific
             backend:
               service:
                 name: driver-service
                 port:
                   number: 80
-          # Rider Service
-          - path: /api/v1/riders/(.*)
+          - path: /api/v1/riders/.*
             pathType: ImplementationSpecific
             backend:
               service:
                 name: rider-service
                 port:
                   number: 80
-          # Trip & Fares
-          - path: /api/v1/trip/(.*)
+          - path: /api/v1/trip/.*
             pathType: ImplementationSpecific
             backend:
               service:
                 name: trip-service
                 port:
                   number: 80
-          - path: /fares/(.*)
+          - path: /fares/.*
             pathType: ImplementationSpecific
             backend:
               service:
                 name: trip-service
-                port:
-                  number: 80
-
----
-
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: rideshare-frontend
-  namespace: default
-  annotations:
-    cert-manager.io/cluster-issuer: letsencrypt-prod
-spec:
-  ingressClassName: nginx
-  tls:
-    - hosts:
-        - rideshare.ijeaweledivine.online
-      secretName: tls-rideshare
-  rules:
-    - host: rideshare.ijeaweledivine.online
-      http:
-        paths:
-          - path: /
-            pathType: Prefix
-            backend:
-              service:
-                name: rideshare-frontend
                 port:
                   number: 80

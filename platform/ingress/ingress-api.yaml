@@ -48,7 +48,7 @@ spec:
                 name: trip-service
                 port:
                   number: 80
-          - path: /fares/.*
+          - path: api/fares/.*
             pathType: ImplementationSpecific
             backend:
               service:

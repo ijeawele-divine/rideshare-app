@@ -13,7 +13,7 @@ spec:
     spec:
       containers:
       - name: driver-service
-        image: 221693237976.dkr.ecr.eu-north-1.amazonaws.com/rideshare/rideshare-services:driver-service3
+        image: 221693237976.dkr.ecr.eu-north-1.amazonaws.com/rideshare/rideshare-services:driver-service4
         resources:
           requests:
             memory: "64Mi"
